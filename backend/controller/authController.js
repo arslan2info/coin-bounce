@@ -1,8 +1,9 @@
 const Joi = require("joi");
 const User = require("../models/user");
 const bcrypt = require('bcryptjs');
-const userDto = require("../dto/user");
 const UserDTO = require("../dto/user");
+const JWTService = require("../services/JWTService");
+
 
 
 
@@ -56,13 +57,40 @@ const authController = {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // 5. store user data in db
-        const userToRegister = User({
-            username,
-            email,
-            name,
-            password: hashedPassword
-        })
-        const user = await userToRegister.save();
+        let accessToken;
+        let refreshToken;
+        let user;
+        try {
+            const userToRegister = User({
+                username,
+                email,
+                name,
+                password: hashedPassword
+            });
+            user = await userToRegister.save();
+
+            // access token
+            accessToken = JWTService.signAccessToken({ _id: user._id, username: user.email }, "30m");
+
+            refreshToken = JWTService.signRefreshToken({ _id: user._id }, "60m");
+
+        } catch (error) {
+            return next(error);
+        }
+
+        // store refresh token in db
+        JWTService.storeRefreshToken(refreshToken, user._id);
+
+        // send tokens in cookie
+        res.cookie('accessToken', accessToken, {
+            maxAge: 1000 * 60 * 60 * 24,
+            httpOnly: true
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            maxAge: 1000 * 60 * 60 * 24,
+            httpOnly: true
+        });
 
         // 6. response send
 
